@@ -107,22 +107,28 @@ class absolute_eps {
 class cross_entropy {
  public:
   static float_t f(const vec_t &y, const vec_t &t) {
-    assert(y.size() == t.size());
-    float_t d{0};
-
-    for (size_t i = 0; i < y.size(); ++i)
-      d += -t[i] * std::log(y[i]) -
-           (float_t(1) - t[i]) * std::log(float_t(1) - y[i]);
-
-    return d;
+      assert(y.size() == t.size());
+      float_t eps = 1e-6;
+      float_t d = 0;
+      for (size_t i = 0; i < y.size(); ++i) {
+          float_t yi = std::min(std::max(y[i], eps), 1.0f - eps);
+          d += -t[i] * std::log(yi) - (1 - t[i]) * std::log(1 - yi);
+      }
+      
+      return d;
   }
 
   static vec_t df(const vec_t &y, const vec_t &t) {
     assert(y.size() == t.size());
+    const float_t eps = 1e-6f;
     vec_t d(t.size());
 
-    for (size_t i = 0; i < y.size(); ++i)
-      d[i]        = (y[i] - t[i]) / (y[i] * (float_t(1) - y[i]));
+    for (size_t i = 0; i < y.size(); ++i) {
+      float_t yi = std::min(std::max(y[i], eps), float_t(1) - eps);
+      // add eps in denominator to prevent blow-up
+      float_t denom = yi * (float_t(1) - yi) + 1e-6f;
+      d[i] = (yi - t[i]) / denom;
+    }
 
     return d;
   }

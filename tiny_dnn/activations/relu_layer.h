@@ -24,7 +24,7 @@ class relu_layer : public activation_layer {
 
   void forward_activation(const vec_t &x, vec_t &y) override {
     for (size_t j = 0; j < x.size(); j++) {
-      y[j] = std::max(float_t(0), x[j]);
+      y[j] = std::min(std::max(float_t(0), x[j]), float_t(6.0));
     }
   }
 
@@ -33,8 +33,7 @@ class relu_layer : public activation_layer {
                            vec_t &dx,
                            const vec_t &dy) override {
     for (size_t j = 0; j < x.size(); j++) {
-      // dx = dy * (gradient of relu)
-      dx[j] = dy[j] * (y[j] > float_t(0) ? float_t(1) : float_t(0));
+      dx[j] = dy[j] * ((y[j] > float_t(0) && y[j] < float_t(6.0)) ? float_t(1) : float_t(0));
     }
   }
 

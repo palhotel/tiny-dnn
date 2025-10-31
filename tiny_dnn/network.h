@@ -480,28 +480,87 @@ class network {
     return test_result;
   }
 
+  inline float stable_sigmoid(float x) {
+    if (x >= 0) {
+        float z = std::exp(-x);
+        return 1.0f / (1.0f + z);
+    } else {
+        float z = std::exp(x);
+        return z / (1.0f + z);
+    }
+  }
+
+
   /**
    * calculate loss value (the smaller, the better)
    **/
-  template <typename E>
-  float_t get_loss(const std::vector<vec_t> &in,
-                   const std::vector<label_t> &t) {
-    float_t sum_loss = float_t(0);
+template <typename E>
+float_t get_loss(const std::vector<vec_t> &in,
+                 const std::vector<label_t> &t) {
+    float_t sum_loss = 0.0;
 
     std::vector<tensor_t> label_tensor;
     normalize_tensor(t, label_tensor);
 
-    for (size_t i = 0; i < in.size(); i++) {
-      const vec_t predicted = predict(in[i]);
-      for (size_t j = 0; j < predicted.size(); j++) {
-        sum_loss += E::f(predicted, label_tensor[i][j]);
-      }
+    const float_t eps = 1e-6; //  log(0)
+
+    for (size_t i = 0; i < in.size(); ++i) {
+        const vec_t predicted_raw = predict(in[i]); 
+        vec_t y(predicted_raw.size());
+
+        // 判断二分类/多分类
+        if (predicted_raw.size() == 1 || (predicted_raw.size() == 2)) {
+            // 二分类，用 sigmoid
+            for (size_t k = 0; k < predicted_raw.size(); ++k) {
+              y[k] = stable_sigmoid(predicted_raw[k]);
+            }
+        } else {
+            // 多分类，用 softmax
+            float_t max_val = *std::max_element(predicted_raw.begin(), predicted_raw.end());
+            float_t sum_exp = 0.0;
+            for (size_t k = 0; k < predicted_raw.size(); ++k) {
+                y[k] = std::exp(predicted_raw[k] - max_val);
+                sum_exp += y[k];
+            }
+            for (size_t k = 0; k < y.size(); ++k) y[k] /= sum_exp;
+        }
+
+        // 获取目标向量
+        if (i >= label_tensor.size()) throw std::runtime_error("label_tensor shorter than inputs");
+        const tensor_t &lt = label_tensor[i];
+        if (lt.empty()) throw std::runtime_error("empty label tensor for sample " + std::to_string(i));
+
+        vec_t target;
+        if (lt.size() == 1) {
+            target = lt[0];
+        } else if (lt.size() == y.size()) {
+            target.resize(y.size());
+            for (size_t k = 0; k < y.size(); ++k) {
+                if (lt[k].empty()) throw std::runtime_error("label element empty");
+                target[k] = lt[k][0];
+            }
+        } else {
+            throw std::runtime_error("unsupported label tensor shape for sample " + std::to_string(i));
+        }
+
+        for (size_t k = 0; k < y.size(); ++k) {
+          y[k] = std::min(std::max(y[k], eps), float_t(1.0) - eps);
+          target[k] = std::min(std::max(target[k], eps), float_t(1.0) - eps);
+        }
+
+        double cur_loss = E::f(y, target);
+
+        sum_loss += cur_loss;
     }
-    return sum_loss;
-  }
+
+    // 返回平均 loss，而不是 sum
+    return sum_loss / in.size();
+}
+
 
   /**
    * calculate loss value (the smaller, the better) for regression task
+   * 回归任务才用到
    **/
   template <typename E>
   float_t get_loss(const std::vector<vec_t> &in, const std::vector<vec_t> &t) {
@@ -810,7 +869,7 @@ class network {
     }
   }
 
- protected:
+ public:
   float_t fprop_max(const vec_t &in) {
     const vec_t &prediction = fprop(in);
     return *std::max_element(std::begin(prediction), std::end(prediction));
